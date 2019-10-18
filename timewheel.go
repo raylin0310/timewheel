@@ -11,14 +11,16 @@ type (
 	tasKFn = func()
 )
 
+type status uint8
+
 const (
-	ready = iota + 1
+	ready status = iota + 1
 	run
 	stop
 )
 
 const (
-	maxBuckets uint32 = 1024 * 1024
+	maxBuckets int = 1024 * 1024
 )
 
 var (
@@ -31,11 +33,11 @@ var (
 type TimeWheel struct {
 	ticker       *time.Ticker
 	tickDuration time.Duration
-	bucketsNum   uint32
+	bucketsNum   int
 	buckets      []bucket
-	curPos       uint32
+	curPos       int
 	keyPosMap    sync.Map
-	status       int32
+	status       status
 	begin        sync.Once
 }
 
@@ -47,8 +49,8 @@ type bucket struct {
 type task struct {
 	key      string
 	delay    time.Duration
-	pos      uint32
-	circle   uint32
+	pos      int
+	circle   int
 	fn       tasKFn
 	schedule bool
 }
@@ -65,7 +67,7 @@ func (b *bucket) push(t *task) {
 	b.list.PushBack(t)
 }
 
-func New(tickDuration time.Duration, bucketsNum uint32) (*TimeWheel, error) {
+func New(tickDuration time.Duration, bucketsNum int32) (*TimeWheel, error) {
 	if bucketsNum <= 0 {
 		return nil, IllegalBucketNumError
 	}
@@ -80,7 +82,7 @@ func New(tickDuration time.Duration, bucketsNum uint32) (*TimeWheel, error) {
 		status:       ready,
 	}
 
-	for i := 0; i < int(num); i++ {
+	for i := 0; i < num; i++ {
 		tw.buckets[i] = bucket{list: list.New()}
 	}
 	return tw, nil
@@ -137,7 +139,7 @@ func (tw *TimeWheel) RemoveTask(key string) {
 	if !ok {
 		return
 	}
-	bucket := tw.buckets[pos.(uint32)]
+	bucket := tw.buckets[pos.(int)]
 	var N *list.Element
 	for e := bucket.list.Front(); e != nil; e = N {
 		N = e.Next()
@@ -150,8 +152,8 @@ func (tw *TimeWheel) RemoveTask(key string) {
 	}
 }
 
-func (tw *TimeWheel) getPositionAndCircle(delay time.Duration) (pos uint32, circle uint32) {
-	dd := uint32(delay / tw.tickDuration)
+func (tw *TimeWheel) getPositionAndCircle(delay time.Duration) (pos int, circle int) {
+	dd := int(delay / tw.tickDuration)
 	circle = dd / tw.bucketsNum
 	pos = (tw.curPos + dd) & (tw.bucketsNum - 1)
 	if circle > 0 && pos == tw.curPos {
@@ -217,15 +219,15 @@ func (tw *TimeWheel) handleTicker() {
 }
 
 // get the bucket capacity
-func normalizeTicksPerWheel(ticksPerWheel uint32) uint32 {
+func normalizeTicksPerWheel(ticksPerWheel int32) int {
 	u := ticksPerWheel - 1
 	u |= u >> 1
 	u |= u >> 2
 	u |= u >> 4
 	u |= u >> 8
 	u |= u >> 16
-	if u+1 > maxBuckets {
+	if int(u+1) > maxBuckets {
 		return maxBuckets
 	}
-	return u + 1
+	return int(u + 1)
 }
