@@ -11,7 +11,7 @@ type (
 	tasKFn = func()
 )
 
-type status uint8
+type status int8
 
 const (
 	ready status = iota + 1
@@ -39,6 +39,8 @@ type TimeWheel struct {
 	keyPosMap    sync.Map
 	status       status
 	begin        sync.Once
+	end          sync.Once
+	stopChan     chan struct{}
 }
 
 type bucket struct {
@@ -80,6 +82,7 @@ func New(tickDuration time.Duration, bucketsNum int32) (*TimeWheel, error) {
 		buckets:      make([]bucket, num),
 		curPos:       0,
 		status:       ready,
+		stopChan:     make(chan struct{}),
 	}
 
 	for i := 0; i < num; i++ {
@@ -105,10 +108,10 @@ func (tw *TimeWheel) AddScheduleTask(key string, delay time.Duration, fn func())
 }
 
 func (tw *TimeWheel) addTask(key string, delay time.Duration, schedule bool, fn func()) error {
+
 	if tw.status != run {
 		return NotRunError
 	}
-
 	if _, exist := tw.keyPosMap.Load(key); exist {
 		return TaskKeyExistError
 	}
@@ -172,7 +175,10 @@ func (tw *TimeWheel) Start() {
 }
 
 func (tw *TimeWheel) Stop() {
-	tw.status = stop
+	tw.end.Do(func() {
+		tw.stopChan <- struct{}{}
+		tw.status = stop
+	})
 }
 
 func (tw *TimeWheel) startTickerHandle() {
@@ -180,11 +186,9 @@ func (tw *TimeWheel) startTickerHandle() {
 		select {
 		case <-tw.ticker.C:
 			tw.handleTicker()
-		default:
-			if tw.status == stop {
-				tw.ticker.Stop()
-				return
-			}
+		case <-tw.stopChan:
+			tw.ticker.Stop()
+			return
 		}
 	}
 }

@@ -45,7 +45,7 @@ func TestTimeWheel_RemoveTask(t *testing.T) {
 	})
 	time.Sleep(2 * time.Second)
 	tw.RemoveTask("task_1")
-	time.Sleep(2 * time.Second)
+	time.Sleep(4 * time.Second)
 	log.Print("end")
 }
 
@@ -81,7 +81,6 @@ func TestTimeWheel_Stop(t *testing.T) {
 	time.Sleep(2 * time.Second)
 
 	tw.Stop()
-
 	err = tw.AddTask("task_4", 500*time.Millisecond, func() {
 		cost := time.Now().Sub(begin).Seconds()
 		log.Print("task_4 cost =======  ", fmt.Sprintf("%.1f", cost))
