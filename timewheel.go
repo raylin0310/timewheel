@@ -69,6 +69,12 @@ func (b *bucket) push(t *task) {
 	b.list.PushBack(t)
 }
 
+func (b *bucket) Front() *list.Element {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.list.Front()
+}
+
 func New(tickDuration time.Duration, bucketsNum int32) (*TimeWheel, error) {
 	if bucketsNum <= 0 {
 		return nil, IllegalBucketNumError
@@ -198,7 +204,7 @@ func (tw *TimeWheel) handleTicker() {
 	bucket := tw.buckets[tw.curPos]
 
 	var N *list.Element
-	for e := bucket.list.Front(); e != nil; e = N {
+	for e := bucket.Front(); e != nil; e = N {
 		N = e.Next()
 		task := e.Value.(*task)
 		if task.circle > 0 {
