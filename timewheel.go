@@ -7,9 +7,7 @@ import (
 	"time"
 )
 
-type (
-	tasKFn = func()
-)
+type taskFn func()
 
 type status int8
 
@@ -53,7 +51,7 @@ type task struct {
 	delay    time.Duration
 	pos      int
 	circle   int
-	fn       tasKFn
+	fn       taskFn
 	schedule bool
 }
 
@@ -98,19 +96,11 @@ func New(tickDuration time.Duration, bucketsNum int32) (*TimeWheel, error) {
 }
 
 func (tw *TimeWheel) AddTask(key string, delay time.Duration, fn func()) error {
-	err := tw.addTask(key, delay, false, fn)
-	if err != nil {
-		return err
-	}
-	return nil
+	return tw.addTask(key, delay, false, fn)
 }
 
 func (tw *TimeWheel) AddScheduleTask(key string, delay time.Duration, fn func()) error {
-	err := tw.addTask(key, delay, true, fn)
-	if err != nil {
-		return err
-	}
-	return nil
+	return tw.addTask(key, delay, true, fn)
 }
 
 func (tw *TimeWheel) addTask(key string, delay time.Duration, schedule bool, fn func()) error {
@@ -150,7 +140,7 @@ func (tw *TimeWheel) RemoveTask(key string) {
 	}
 	bucket := tw.buckets[pos.(int)]
 	var N *list.Element
-	for e := bucket.list.Front(); e != nil; e = N {
+	for e := bucket.Front(); e != nil; e = N {
 		N = e.Next()
 		task := e.Value.(*task)
 		if key == task.key {
@@ -215,7 +205,12 @@ func (tw *TimeWheel) handleTicker() {
 		bucket.remove(e)
 
 		if task.schedule {
-			// reload
+			// check the task it exist
+			_, ok := tw.keyPosMap.Load(task.key)
+			if !ok {
+				continue
+			}
+			//reload
 			pos, circle := tw.getPositionAndCircle(task.delay)
 			task.pos = pos
 			task.circle = circle
