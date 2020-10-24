@@ -1,7 +1,6 @@
 package timewheel
 
 import (
-	"container/list"
 	"errors"
 	"sync"
 	"time"
@@ -32,7 +31,7 @@ type TimeWheel struct {
 	ticker       *time.Ticker
 	tickDuration time.Duration
 	bucketsNum   int
-	buckets      []bucket
+	buckets      []*bucket
 	curPos       int
 	keyPosMap    sync.Map
 	status       status
@@ -42,7 +41,7 @@ type TimeWheel struct {
 }
 
 type bucket struct {
-	list *list.List
+	list []*task
 	mu   sync.Mutex
 }
 
@@ -55,22 +54,10 @@ type task struct {
 	schedule bool
 }
 
-func (b *bucket) remove(e *list.Element) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.list.Remove(e)
-}
-
 func (b *bucket) push(t *task) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.list.PushBack(t)
-}
-
-func (b *bucket) Front() *list.Element {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.list.Front()
+	b.list = append(b.list, t)
 }
 
 func New(tickDuration time.Duration, bucketsNum int32) (*TimeWheel, error) {
@@ -83,14 +70,14 @@ func New(tickDuration time.Duration, bucketsNum int32) (*TimeWheel, error) {
 	tw := &TimeWheel{
 		tickDuration: tickDuration,
 		bucketsNum:   num,
-		buckets:      make([]bucket, num),
+		buckets:      make([]*bucket, num),
 		curPos:       0,
 		status:       ready,
 		stopChan:     make(chan struct{}),
 	}
 
 	for i := 0; i < num; i++ {
-		tw.buckets[i] = bucket{list: list.New()}
+		tw.buckets[i] = &bucket{list: make([]*task, 0)}
 	}
 	return tw, nil
 }
@@ -139,12 +126,13 @@ func (tw *TimeWheel) RemoveTask(key string) {
 		return
 	}
 	bucket := tw.buckets[pos.(int)]
-	var N *list.Element
-	for e := bucket.Front(); e != nil; e = N {
-		N = e.Next()
-		task := e.Value.(*task)
-		if key == task.key {
-			bucket.remove(e)
+	bucket.mu.Lock()
+	defer bucket.mu.Unlock()
+
+	for i := 0; i < len(bucket.list); i++ {
+		t := bucket.list[i]
+		if key == t.key {
+			bucket.list = append(bucket.list[:i], bucket.list[i+1:]...)
 			tw.keyPosMap.Delete(key)
 			return
 		}
@@ -154,6 +142,7 @@ func (tw *TimeWheel) RemoveTask(key string) {
 func (tw *TimeWheel) getPositionAndCircle(delay time.Duration) (pos int, circle int) {
 	dd := int(delay / tw.tickDuration)
 	circle = dd / tw.bucketsNum
+	// 此处的tw.curPos表示该position中的任务都已经处理完毕
 	pos = (tw.curPos + dd) & (tw.bucketsNum - 1)
 	if circle > 0 && pos == tw.curPos {
 		circle--
@@ -190,22 +179,22 @@ func (tw *TimeWheel) startTickerHandle() {
 }
 
 func (tw *TimeWheel) handleTicker() {
-	tw.curPos = (tw.curPos + 1) & (tw.bucketsNum - 1) //equals (tw.curPos + 1) % tw.bucketsNum
-	bucket := tw.buckets[tw.curPos]
-
-	var N *list.Element
-	for e := bucket.Front(); e != nil; e = N {
-		N = e.Next()
-		task := e.Value.(*task)
+	curPos := (tw.curPos + 1) & (tw.bucketsNum - 1) //equals (tw.curPos + 1) % tw.bucketsNum
+	bucket := tw.buckets[curPos]
+	bucket.mu.Lock()
+	defer bucket.mu.Unlock()
+	tw.curPos = curPos
+	k := 0
+	for i := 0; i < len(bucket.list); i++ {
+		task := bucket.list[i]
 		if task.circle > 0 {
 			task.circle--
+			bucket.list[k] = task
+			k++
 			continue
 		}
-		task.fn()
-		bucket.remove(e)
-
+		go task.fn()
 		if task.schedule {
-			// check the task it exist
 			_, ok := tw.keyPosMap.Load(task.key)
 			if !ok {
 				continue
@@ -214,13 +203,18 @@ func (tw *TimeWheel) handleTicker() {
 			pos, circle := tw.getPositionAndCircle(task.delay)
 			task.pos = pos
 			task.circle = circle
-			// reset
-			tw.buckets[pos].push(task)
-			tw.keyPosMap.Store(task.key, pos)
+			if pos == curPos {
+				bucket.list[k] = task
+				k++
+			} else {
+				tw.buckets[pos].push(task)
+				tw.keyPosMap.Store(task.key, pos)
+			}
 		} else {
 			tw.keyPosMap.Delete(task.key)
 		}
 	}
+	bucket.list = bucket.list[:k]
 }
 
 // get the bucket capacity

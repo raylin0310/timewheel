@@ -9,7 +9,7 @@ import (
 )
 
 func TestTimeWheel_AddScheduleTask(t *testing.T) {
-	tw, err := New(1000*time.Millisecond, 1024)
+	tw, err := New(100*time.Millisecond, 1024)
 	if err != nil {
 		t.Fail()
 		return
@@ -18,16 +18,14 @@ func TestTimeWheel_AddScheduleTask(t *testing.T) {
 	begin := time.Now()
 
 	for i := 0; i < 10; i++ {
-		for j := 0; j < 200; j++ {
-			key := "task == " + strconv.Itoa(i) + "-" + strconv.Itoa(j)
-			_ = tw.AddScheduleTask(key, 2000*time.Millisecond, func() {
-				cost := time.Now().Sub(begin).Seconds()
-				log.Print(key+" cost =======  ", fmt.Sprintf("%.1f", cost))
-			})
-		}
+		key := fmt.Sprintf("task == %d ", i)
+		_ = tw.AddScheduleTask(key, 200*time.Millisecond, func() {
+			cost := time.Now().Sub(begin).Seconds()
+			t.Logf(" %s cost =======  %.1f", key, cost)
+		})
 
 	}
-	time.Sleep(10 * time.Second)
+	time.Sleep(5 * time.Second)
 
 }
 
@@ -41,15 +39,15 @@ func TestTimeWheel_AddScheduleTask2(t *testing.T) {
 	begin := time.Now()
 
 	for i := 0; i < 10; i++ {
-		key := "task == " + strconv.Itoa(i)
-		_ = tw.AddScheduleTask(key, 1000*time.Millisecond, func() {
+		key := fmt.Sprintf("task == %s ", strconv.Itoa(i))
+		_ = tw.AddScheduleTask(key, 2000*time.Millisecond, func() {
 			cost := time.Now().Sub(begin).Seconds()
-			log.Print(key+" cost =======  ", fmt.Sprintf("%.1f", cost))
+			t.Logf(" %s cost =======  %.1f", key, cost)
 			tw.RemoveTask(key)
 		})
 
 	}
-	time.Sleep(10 * time.Second)
+	time.Sleep(5 * time.Second)
 
 }
 
@@ -63,8 +61,9 @@ func TestTimeWheel_RemoveTask(t *testing.T) {
 	begin := time.Now()
 	_ = tw.AddScheduleTask("task_1", 500*time.Millisecond, func() {
 		cost := time.Now().Sub(begin).Seconds()
-		log.Print("task_1 cost =======  ", fmt.Sprintf("%.1f", cost))
+		t.Logf("task_1 cost ======= %.1f", cost)
 	})
+	//两秒之后删除
 	time.Sleep(2 * time.Second)
 	tw.RemoveTask("task_1")
 	time.Sleep(4 * time.Second)
@@ -81,7 +80,7 @@ func TestTimeWheel_AddTask(t *testing.T) {
 	begin := time.Now()
 	_ = tw.AddTask("task_2", 500*time.Millisecond, func() {
 		cost := time.Now().Sub(begin).Seconds()
-		log.Print("task_1 cost =======  ", fmt.Sprintf("%.1f", cost))
+		t.Logf("task_2 cost ======= %.1f", cost)
 	})
 
 	time.Sleep(2 * time.Second)
@@ -96,11 +95,11 @@ func TestConcurrentAddScheduleTask(t *testing.T) {
 	}
 	tw.Start()
 	begin := time.Now()
-	for i := 0; i < 100000; i++ {
+	for i := 0; i < 10000; i++ {
 		key := "task" + strconv.Itoa(i)
-		go tw.AddScheduleTask(key, 500*time.Millisecond, func() {
+		go tw.AddScheduleTask(key, 200*time.Millisecond, func() {
 			cost := time.Now().Sub(begin).Seconds()
-			log.Print("task_1 cost =======  ", fmt.Sprintf("%.1f", cost))
+			t.Logf(" %s cost =======  %.1f", key, cost)
 		})
 	}
 
@@ -116,16 +115,16 @@ func TestTimeWheel_Stop(t *testing.T) {
 	}
 	tw.Start()
 	begin := time.Now()
-	_ = tw.AddTask("task_3", 500*time.Millisecond, func() {
+	_ = tw.AddScheduleTask("task_3", 500*time.Millisecond, func() {
 		cost := time.Now().Sub(begin).Seconds()
-		log.Print("task_3 cost =======  ", fmt.Sprintf("%.1f", cost))
+		t.Logf("task_3 cost =======  %.1f", cost)
 	})
 	time.Sleep(2 * time.Second)
 
 	tw.Stop()
 	err = tw.AddTask("task_4", 500*time.Millisecond, func() {
 		cost := time.Now().Sub(begin).Seconds()
-		log.Print("task_4 cost =======  ", fmt.Sprintf("%.1f", cost))
+		t.Logf("task_4 cost ======= %.1f", cost)
 	})
 	if err == NotRunError {
 		log.Print("already stop")
